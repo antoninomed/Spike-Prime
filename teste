@@ -1,0 +1,96 @@
+from hub import light_matrix, port, motion_sensor
+import runloop, motor_pair, motor
+
+
+motor_pair.pair(motor_pair.PAIR_1, port.E, port.F)
+
+async def giro (angulo, kp):
+    if angulo>0:
+        while abs(angulo)>=abs(motion_sensor.tilt_angles()[0]):
+            erro = angulo - motion_sensor.tilt_angles()[0]
+            correcao = erro*kp
+            motor_pair.move_tank(motor_pair.PAIR_1, round(correcao*-1), round(correcao))
+    else:
+        while abs(angulo)>=abs(motion_sensor.tilt_angles()[0]):
+            erro = abs(angulo) - abs(motion_sensor.tilt_angles()[0])
+            correcao = erro*kp
+            motor_pair.move_tank(motor_pair.PAIR_1, round(correcao), round(correcao*-1))
+        motor_pair.stop(motor_pair.PAIR_1)
+
+
+async def giroAz(angulo, kp):
+    # Recupera o valor atual do sensor de giroscópio em decigraus
+    angulo_atual = motion_sensor.tilt_angles()[0]
+
+    # Função para ajustar o ângulo para o intervalo [-1790, 1790]
+    def ajustar_angulo(angulo):
+        # Corrige o valor do ângulo para estar sempre dentro do intervalo [-1790, 1790]
+        if angulo > 1790:
+            angulo -= 3580# Se ultrapassar 1790, retorna para o intervalo negativo
+        elif angulo < -1790:
+            angulo += 3580# Se ultrapassar -1790, retorna para o intervalo positivo
+        return angulo
+
+    # Ajusta os ângulos de destino para o intervalo [-1790, 1790]
+    angulo_desejado = ajustar_angulo(angulo)
+    angulo_atual = ajustar_angulo(angulo_atual)
+
+    # Determina a direção de rotação (sentido horário ou anti-horário)
+    while abs(angulo_desejado - angulo_atual) > 0:# Um valor pequeno para precisão
+        erro = angulo_desejado - angulo_atual
+        correcao = erro * kp
+        motor_pair.move_tank(motor_pair.PAIR_1, round(correcao * -1), round(correcao))
+        angulo_atual = ajustar_angulo(motion_sensor.tilt_angles()[0])# Atualiza o ângulo atual
+
+    motor_pair.stop(motor_pair.PAIR_1)
+
+
+
+async def moverAz(velocidade,distancia, kp, referencia):
+    def conversor(distancia):
+        graus_motor=(distancia*360)/17.5
+        return graus_motor
+    
+    motor.reset_relative_position(port.E,0)
+    distancia_total = conversor(distancia)
+    
+    def ajustar_angulo(angulo):
+        # Corrige o valor do ângulo para estar sempre dentro do intervalo [-1790, 1790]
+        if angulo > 1790:
+            angulo -= 3580# Se ultrapassar 1790, retorna para o intervalo negativo
+        elif angulo < -1790:
+            angulo += 3580# Se ultrapassar -1790, retorna para o intervalo positivo
+        return angulo
+
+    angulo_atual = ajustar_angulo(motion_sensor.tilt_angles()[0])
+    erro_angulo = referencia-angulo_atual
+
+    print (erro_angulo)
+
+    if abs(erro_angulo)>0:
+        await giroAz(referencia, 0.5)
+        await runloop.sleep_ms(2000)
+        while distancia_total>abs(motor.relative_position(port.E)):
+            erro = referencia - motion_sensor.tilt_angles()[0]
+            correcao = erro * kp
+            motor_pair.move(motor_pair.PAIR_1, round(correcao*-1), velocity=velocidade)
+        motor_pair.stop(motor_pair.PAIR_1)
+
+    else:
+        while distancia_total>abs(motor.relative_position(port.E)):
+            erro = referencia - motion_sensor.tilt_angles()[0]
+            correcao = erro * kp
+            motor_pair.move(motor_pair.PAIR_1, round(correcao*-1), velocity=velocidade)
+        motor_pair.stop(motor_pair.PAIR_1)
+        
+
+async def main():
+    #await giroAz (-900, 0.5)
+    motion_sensor.reset_yaw(0)
+    await moverAz(200,30,0.5, 0)
+
+
+
+    
+
+runloop.run(main())
